@@ -5,13 +5,13 @@ import pickle as pkl
 import scipy.sparse as sp
 import sys
 from tqdm import tqdm
-
+import pdb
 
 if len(sys.argv) < 2:
 	sys.exit("Use: python build_graph.py <dataset>")
 
 # settings
-datasets = ['mr', 'ohsumed', 'R8', 'R52', 'TREC', 'ag_news', 'WebKB', 'SST1', 'SST2']
+datasets = ['DementiaBank', 'ADReSS', 'ADReSSo','overlap_DB_ADReSS']
 
 dataset = sys.argv[1]
 if dataset not in datasets:
@@ -30,7 +30,7 @@ except:
     print('using default unweighted graph')
 
 truncate = False # whether to truncate long document
-MAX_TRUNC_LEN = 350
+MAX_TRUNC_LEN = 500
 
 
 print('loading raw data')
@@ -39,7 +39,7 @@ print('loading raw data')
 word_embeddings_dim = 300
 word_embeddings = {}
 
-with open('glove.6B.' + str(word_embeddings_dim) + 'd.txt', 'r') as f:
+with open('glove/glove.6B.' + str(word_embeddings_dim) + 'd.txt', 'r') as f:
     for line in f.readlines():
         data = line.split()
         word_embeddings[str(data[0])] = list(map(float,data[1:]))
@@ -47,42 +47,52 @@ with open('glove.6B.' + str(word_embeddings_dim) + 'd.txt', 'r') as f:
 
 # load document list
 doc_name_list = []
-doc_train_list = []
-doc_test_list = []
-
-with open('data/' + dataset + '.txt', 'r') as f:
-    for line in f.readlines():
-        doc_name_list.append(line.strip())
-        temp = line.split("\t")
-
-        if temp[1].find('test') != -1:
-            doc_test_list.append(line.strip())
-        elif temp[1].find('train') != -1:
-            doc_train_list.append(line.strip())
-
-
-# load raw text
+label_list = []
 doc_content_list = []
 
-with open('data/corpus/' + dataset + '.clean.txt', 'r') as f:
-    for line in f.readlines():
-        doc_content_list.append(line.strip())
+dataset_folder = os.path.join('/home/dell/Documents/dementia_data/from_old_computer/publicly_avail', dataset,'transcript')
+data_label_dict = np.load('/home/dell/Documents/dementia_data/from_old_computer/label_dict_full.npy', allow_pickle=True).item()
+doc_train_list_path = os.path.join('/home/dell/Documents/dementia_data/from_old_computer/publicly_avail', dataset,'list/0/train_list')
+doc_dev_list_path = os.path.join('/home/dell/Documents/dementia_data/from_old_computer/publicly_avail', dataset,'list/0/dev_list')
+doc_test_list_path = os.path.join('/home/dell/Documents/dementia_data/from_old_computer/publicly_avail', dataset,'list/0/test_list')
+
+doc_train_list = open(doc_train_list_path).readlines()
+doc_dev_list = open(doc_dev_list_path).readlines()
+doc_test_list = open(doc_test_list_path).readlines()
+
+
+for file_name in os.listdir(dataset_folder):
+    file_path = os.path.join(dataset_folder,file_name)
+    doc_name_list.append(file_name)
+    content = open(file_path).readlines()[0]
+    doc_content_list.append(content)
+    label_list.append(data_label_dict[file_name])
+
 
 
 # map and shuffle
 train_ids = []
 for train_name in doc_train_list:
-    train_id = doc_name_list.index(train_name)
+    train_id = doc_name_list.index(train_name.strip())
     train_ids.append(train_id)
 random.shuffle(train_ids)
 
+
+dev_ids = []
+for dev_name in doc_dev_list:
+    dev_id = doc_name_list.index(dev_name.strip())
+    dev_ids.append(dev_id)
+random.shuffle(dev_ids)
+
+
 test_ids = []
 for test_name in doc_test_list:
-    test_id = doc_name_list.index(test_name)
+    test_id = doc_name_list.index(test_name.strip())
     test_ids.append(test_id)
 random.shuffle(test_ids)
 
-ids = train_ids + test_ids
+
+ids = train_ids + dev_ids + test_ids
 
 
 shuffle_doc_name_list = []
@@ -113,18 +123,9 @@ for v in vocab:
     oov[v] = np.random.uniform(-0.01, 0.01, word_embeddings_dim)
 
 
-# build label list
-label_set = set()
-for doc_meta in shuffle_doc_name_list:
-    temp = doc_meta.split('\t')
-    label_set.add(temp[2])
-label_list = list(label_set)
-
-
 # select 90% training set
 train_size = len(train_ids)
-val_size = int(0.1 * train_size)
-real_train_size = train_size - val_size
+dev_size = len(dev_ids)
 test_size = len(test_ids)
 
 
@@ -206,8 +207,7 @@ def build_graph(start, end):
     # one-hot labels
     for i in range(start, end):
         doc_meta = shuffle_doc_name_list[i]
-        temp = doc_meta.split('\t')
-        label = temp[2]
+        label = data_label_dict[doc_meta]
         one_hot = [0 for l in range(len(label_list))]
         label_index = label_list.index(label)
         one_hot[label_index] = 1
@@ -218,11 +218,11 @@ def build_graph(start, end):
 
 
 print('building graphs for training')
-x_adj, x_feature, y, _, _ = build_graph(start=0, end=real_train_size)
+x_adj, x_feature, y, _, _ = build_graph(start=0, end=train_size)
 print('building graphs for training + validation')
-allx_adj, allx_feature, ally, doc_len_list_train, vocab_train = build_graph(start=0, end=train_size)
+allx_adj, allx_feature, ally, doc_len_list_train, vocab_train = build_graph(start=0, end=train_size+dev_size)
 print('building graphs for test')
-tx_adj, tx_feature, ty, doc_len_list_test, vocab_test = build_graph(start=train_size, end=train_size+test_size)
+tx_adj, tx_feature, ty, doc_len_list_test, vocab_test = build_graph(start=train_size+dev_size, end=train_size+dev_size+test_size)
 doc_len_list = doc_len_list_train + doc_len_list_test
 
 
