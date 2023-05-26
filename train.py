@@ -17,7 +17,7 @@ from models import GNN, MLP
 # Settings
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_string('dataset', 'mr', 'Dataset string.')  # 'mr','ohsumed','R8','R52'
+flags.DEFINE_string('dataset', 'DementiaBank', 'Dataset string.')  # 'mr','ohsumed','R8','R52'
 flags.DEFINE_string('model', 'gnn', 'Model string.') 
 flags.DEFINE_float('learning_rate', 0.005, 'Initial learning rate.')
 flags.DEFINE_integer('epochs', 200, 'Number of epochs to train.')
